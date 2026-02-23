@@ -65,30 +65,35 @@ const Orders = () => {
     };
 
     const cancelOrder = async (id) => {
-        try {
-            const token = localStorage.getItem("token");
 
-            const res = await fetch(
-                `http://172.16.60.17:5000/cancel-order/${id}`,
-                {
-                    method: "PUT",
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                }
-            );
+        const reason = window.prompt("Please enter cancellation reason:");
 
-            const data = await res.json();
+        if (!reason) {
+            alert("Cancellation reason is required");
+            return;
+        }
 
-            if (res.ok) {
-                alert("Order Cancelled");
-                fetchOrders(); // Refresh orders
-            } else {
-                alert(data.error);
+        const token = localStorage.getItem("token");
+
+        const response = await fetch(
+            `http://172.16.60.17:5000/cancel-order/${id}`,
+            {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ reason })
             }
+        );
 
-        } catch (error) {
-            console.error(error);
+        const data = await response.json();
+
+        if (response.ok) {
+            alert("Order cancelled successfully");
+            fetchOrders();   // better than reload
+        } else {
+            alert(data.error || "Cancellation failed");
         }
     };
 
@@ -334,8 +339,7 @@ const Orders = () => {
                                         </button>
                                     )}
 
-                                    {/* ✅ EDIT ADDRESS BUTTON */}
-                                    {order.status === "Pending" && (
+                                    {order.status !== "Delivered" && order.status !== "Refunded" && (
                                         <button
                                             className="btn btn-outline-secondary btn-sm rounded-pill px-4"
                                             onClick={() => openAddressModal(order)}
@@ -344,8 +348,7 @@ const Orders = () => {
                                         </button>
                                     )}
 
-                                    {/* ✅ CANCEL BUTTON */}
-                                    {order.status === "Pending" && (
+                                    {order.status !== "Delivered" && order.status !== "Refunded" && (
                                         <button
                                             className="btn btn-outline-danger btn-sm rounded-pill px-4"
                                             onClick={() => cancelOrder(order._id)}

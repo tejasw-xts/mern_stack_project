@@ -653,3 +653,51 @@ a {
     transform: translateY(0);
   }
 }
+
+.dashboard-wrapper {
+  background: #f8f9fc;
+  min-height: 100vh;
+}
+
+.dashboard-title {
+  font-size: 26px;
+  font-weight: 700;
+  margin-bottom: 30px;
+}
+
+.dashboard-card {
+  border: none;
+  border-radius: 18px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.05);
+  transition: 0.3s ease;
+  height: 100%;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-4px);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6c757d;
+}
+
+.card-value {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.chart-card {
+  padding: 25px;
+}
+
+.chart-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.recharts-legend-wrapper {
+  margin-top: 15px !important;
+}

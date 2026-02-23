@@ -16,8 +16,26 @@ const jwtKey = "e-comm";
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
 
+const nodemailer = require("nodemailer");
+
 app.use(express.json());
 app.use(cors());
+
+/* =====================================================
+   📧 ZOHO EMAIL CONFIGURATION
+===================================================== */
+
+const transporter = nodemailer.createTransport({
+    host: "smtppro.zoho.in",
+    port: 465,
+    secure: true,
+    auth: {
+        user: "twaghmode@xtsworld.in",
+        pass: "JRd0Z4zr4AQY"
+    }
+});
+
+const ADMIN_EMAIL = "twaghmode@xtsworld.in";  // change if needed
 
 /* =====================================================
    📂 UPLOAD FOLDER SETUP
@@ -94,10 +112,117 @@ app.post("/register", upload.single("image"), async (req, res) => {
             password: req.body.password,
             mobile: req.body.mobile || "",
             image: req.file ? req.file.filename : "",
-            role: "customer"  // 🔥 FORCE CUSTOMER
+            role: "customer"
         });
 
         const result = await user.save();
+
+        /* ================= SEND ADMIN NOTIFICATION EMAIL ================= */
+
+        try {
+
+            await transporter.sendMail({
+                from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                to: ADMIN_EMAIL,
+                subject: "🆕 New Customer Registration",
+                html: `
+        <div style="font-family:Arial;padding:30px;background:#f4f6f8;">
+            <div style="background:#ffffff;padding:25px;border-radius:10px;
+                        box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+
+                <h2 style="margin-top:0;">New Customer Registered 🎉</h2>
+
+                <p><strong>Name:</strong> ${result.name}</p>
+                <p><strong>Email:</strong> ${result.email}</p>
+                <p><strong>Mobile:</strong> ${result.mobile || "Not Provided"}</p>
+
+                <hr style="margin:20px 0;" />
+
+                <p style="font-size:13px;color:#777;">
+                    Registration Time: ${new Date().toLocaleString()}
+                </p>
+
+            </div>
+        </div>
+        `
+            });
+
+            console.log("Admin notification email sent");
+
+        } catch (adminEmailError) {
+            console.log("Admin Email Failed:", adminEmailError.message);
+        }
+
+        /* ================= SEND WELCOME EMAIL ================= */
+
+        try {
+            await transporter.sendMail({
+                from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                to: result.email,
+                subject: "Welcome to Mukta Online Store 🛍️",
+                html: `
+        <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+                <tr>
+                    <td align="center">
+                        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,0.08);">
+                            
+                            <!-- Header -->
+                            <tr>
+                                <td style="background:#111827;padding:25px;text-align:center;color:#fff;">
+                                    <h1 style="margin:0;">Mukta Online Store 🛍️</h1>
+                                </td>
+                            </tr>
+
+                            <!-- Body -->
+                            <tr>
+                                <td style="padding:35px;">
+                                    <h2 style="margin-top:0;color:#111;">Welcome ${result.name} 👋</h2>
+                                    
+                                    <p style="color:#555;font-size:15px;line-height:1.6;">
+                                        Your account has been successfully created.
+                                        We are excited to have you with us!
+                                    </p>
+
+                                    <div style="background:#f9fafb;padding:15px;border-radius:8px;margin:20px 0;">
+                                        <p><strong>Email:</strong> ${result.email}</p>
+                                        <p><strong>Mobile:</strong> ${result.mobile}</p>
+                                    </div>
+
+                                    <div style="text-align:center;margin:30px 0;">
+                                        <a href="http://172.16.60.17:3001/shop"
+                                           style="background:#111827;color:#fff;text-decoration:none;padding:12px 30px;border-radius:25px;font-weight:bold;">
+                                           Start Shopping
+                                        </a>
+                                    </div>
+
+                                    <p style="font-size:13px;color:#888;">
+                                        Need help? Contact our support anytime.
+                                    </p>
+                                </td>
+                            </tr>
+
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background:#f3f4f6;padding:20px;text-align:center;font-size:12px;color:#777;">
+                                    © ${new Date().getFullYear()} Mukta Online Store. All rights reserved.
+                                </td>
+                            </tr>
+
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        `
+            });
+
+            console.log("Welcome email sent");
+
+        } catch (emailError) {
+            console.log("Welcome Email Failed:", emailError.message);
+        }
+
         res.json(result);
 
     } catch (err) {
@@ -285,33 +410,213 @@ app.get("/shop-product/:id", async (req, res) => {
 // CUSTOMER PLACE ORDER
 app.post("/place-order", async (req, res) => {
 
-    const orderId = "ORD-" + Date.now().toString().slice(-6);
+    try {
 
-    const order = new Order({
-        orderId,
-        ...req.body,
-        status: "Pending"
-    });
+        const orderId = "ORD-" + Date.now().toString().slice(-6);
 
-    const savedOrder = await order.save();
-    res.status(201).json(savedOrder);
+        const order = new Order({
+            orderId,
+            ...req.body,
+            status: "Pending"
+        });
+
+        const savedOrder = await order.save();
+
+        try {
+
+            let productRows = "";
+            let subtotal = 0;
+
+            savedOrder.products.forEach(item => {
+
+                const total = item.price * item.quantity;
+                subtotal += total;
+
+                productRows += `
+                <tr>
+                    <td style="padding:8px;border:1px solid #ddd;">${item.name}</td>
+                    <td style="padding:8px;border:1px solid #ddd;text-align:center;">${item.quantity}</td>
+                    <td style="padding:8px;border:1px solid #ddd;text-align:right;">₹ ${item.price}</td>
+                    <td style="padding:8px;border:1px solid #ddd;text-align:right;">₹ ${total}</td>
+                </tr>
+                `;
+            });
+
+            const gst = subtotal * 0.18;
+            const grandTotal = subtotal + gst;
+
+            /* ================= CUSTOMER MAIL ================= */
+
+            await transporter.sendMail({
+                from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                to: savedOrder.email,
+                subject: `Order Confirmation - ${savedOrder.orderId} 🛒`,
+                html: `
+                <div style="font-family:Arial;padding:30px;">
+                    <h2>Thank You for Your Order 🎉</h2>
+
+                    <p><strong>Order ID:</strong> ${savedOrder.orderId}</p>
+                    <p><strong>Status:</strong> ${savedOrder.status}</p>
+
+                    <h3>Billing Address</h3>
+                    <p>
+                        ${savedOrder.billingAddress?.address || ""}<br/>
+                        ${savedOrder.billingAddress?.city || ""}, 
+                        ${savedOrder.billingAddress?.state || ""} - 
+                        ${savedOrder.billingAddress?.pincode || ""}
+                    </p>
+
+                    <h3>Shipping Address</h3>
+                    <p>
+                        ${savedOrder.shippingAddress?.address || ""}<br/>
+                        ${savedOrder.shippingAddress?.city || ""}, 
+                        ${savedOrder.shippingAddress?.state || ""} - 
+                        ${savedOrder.shippingAddress?.pincode || ""}
+                    </p>
+
+                    <h3>Products Ordered</h3>
+                    <table width="100%" style="border-collapse:collapse;">
+                        <tr style="background:#eee;">
+                            <th style="padding:8px;border:1px solid #ddd;">Product</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Qty</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Price</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Total</th>
+                        </tr>
+                        ${productRows}
+                    </table>
+
+                    <div style="text-align:right;margin-top:20px;">
+                        <p>Subtotal: ₹ ${subtotal}</p>
+                        <p>GST (18%): ₹ ${gst.toFixed(2)}</p>
+                        <h3>Grand Total: ₹ ${grandTotal.toFixed(2)}</h3>
+                    </div>
+
+                    <p style="margin-top:20px;color:#777;">
+                        📄 Invoice will be sent after your order is delivered.
+                    </p>
+                </div>
+                `
+            });
+
+            console.log("Customer confirmation sent");
+
+            /* ================= ADMIN MAIL ================= */
+
+            await transporter.sendMail({
+                from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                to: ADMIN_EMAIL,
+                subject: `🛒 New Order Received - ${savedOrder.orderId}`,
+                html: `
+               <div style="font-family:Arial;padding:30px;">
+                    <h2>New Order Placed</h2>
+
+                    <p><strong>Order ID:</strong> ${savedOrder.orderId}</p>
+                    <p><strong>Status:</strong> ${savedOrder.status}</p>
+
+                    <h3>Billing Address</h3>
+                    <p>
+                        ${savedOrder.billingAddress?.address || ""}<br/>
+                        ${savedOrder.billingAddress?.city || ""}, 
+                        ${savedOrder.billingAddress?.state || ""} - 
+                        ${savedOrder.billingAddress?.pincode || ""}
+                    </p>
+
+                    <h3>Shipping Address</h3>
+                    <p>
+                        ${savedOrder.shippingAddress?.address || ""}<br/>
+                        ${savedOrder.shippingAddress?.city || ""}, 
+                        ${savedOrder.shippingAddress?.state || ""} - 
+                        ${savedOrder.shippingAddress?.pincode || ""}
+                    </p>
+
+                    <h3>Products Ordered</h3>
+                    <table width="100%" style="border-collapse:collapse;">
+                        <tr style="background:#eee;">
+                            <th style="padding:8px;border:1px solid #ddd;">Product</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Qty</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Price</th>
+                            <th style="padding:8px;border:1px solid #ddd;">Total</th>
+                        </tr>
+                        ${productRows}
+                    </table>
+
+                    <div style="text-align:right;margin-top:20px;">
+                        <p>Subtotal: ₹ ${subtotal}</p>
+                        <p>GST (18%): ₹ ${gst.toFixed(2)}</p>
+                        <h3>Grand Total: ₹ ${grandTotal.toFixed(2)}</h3>
+                    </div>
+
+                    <p style="margin-top:20px;color:#777;">
+                        📄 Invoice will be sent after your order is delivered.
+                    </p>
+                </div>
+                `
+            });
+
+            console.log("Admin order mail sent");
+
+        } catch (mailError) {
+            console.log("Mail error:", mailError.message);
+        }
+
+        res.status(201).json(savedOrder);
+
+    } catch (error) {
+        console.log("Order Error:", error);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 // Cancel Order
 app.put("/cancel-order/:id", verifyToken, async (req, res) => {
     try {
+
+        const { reason } = req.body;
+
         const order = await Order.findById(req.params.id);
 
         if (!order) {
             return res.status(404).send({ error: "Order not found" });
         }
 
-        if (order.status === "Completed") {
+        if (order.status === "Delivered") {
             return res.status(400).send({ error: "Cannot cancel delivered order" });
         }
 
         order.status = "Cancelled";
+        order.cancelReason = reason || "No reason provided";
+        order.cancelledAt = new Date();
+
         await order.save();
+
+        /* ========= CUSTOMER MAIL ========= */
+
+        await transporter.sendMail({
+            from: "Mukta Online Store <twaghmode@xtsworld.in>",
+            to: order.email,
+            subject: `Order ${order.orderId} Cancelled`,
+            html: `
+                <h3>Your order has been cancelled</h3>
+                <p><strong>Order ID:</strong> ${order.orderId}</p>
+                <p><strong>Reason:</strong> ${order.cancelReason}</p>
+                <p>Refund will be processed within 3-5 business days.</p>
+            `
+        });
+
+        /* ========= ADMIN MAIL ========= */
+
+        await transporter.sendMail({
+            from: "Mukta Online Store <twaghmode@xtsworld.in>",
+            to: ADMIN_EMAIL,
+            subject: `⚠ Order Cancelled - ${order.orderId}`,
+            html: `
+                <h3>Order Cancelled</h3>
+                <p><strong>Order ID:</strong> ${order.orderId}</p>
+                <p><strong>Customer:</strong> ${order.customerName}</p>
+                <p><strong>Reason:</strong> ${order.cancelReason}</p>
+                <p>Please process refund.</p>
+            `
+        });
 
         res.send({ message: "Order cancelled successfully" });
 
@@ -360,6 +665,7 @@ app.get("/orders", verifyToken, verifyAdmin, async (req, res) => {
 
 app.put("/order/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
+
         const { status } = req.body;
 
         const updateData = {
@@ -372,25 +678,22 @@ app.put("/order/:id", verifyToken, verifyAdmin, async (req, res) => {
             }
         };
 
-        // ✅ Confirmed
         if (status === "Confirmed") {
             updateData.confirmedAt = new Date();
         }
 
-        // ✅ Shipped
         if (status === "Shipped") {
             updateData.shippedAt = new Date();
             updateData.trackingId = "TRK-" + Date.now();
-            updateData.estimatedDelivery = new Date(
-                Date.now() + 5 * 24 * 60 * 60 * 1000
-            );
+            updateData.estimatedDelivery =
+                new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
         }
 
-        // ✅ Delivered
         if (status === "Delivered") {
             updateData.deliveredAt = new Date();
         }
 
+        // ✅ UPDATE ORDER FIRST
         const updatedOrder = await Order.findByIdAndUpdate(
             req.params.id,
             updateData,
@@ -399,6 +702,234 @@ app.put("/order/:id", verifyToken, verifyAdmin, async (req, res) => {
 
         if (!updatedOrder) {
             return res.status(404).json({ error: "Order not found" });
+        }
+
+        /* =====================================================
+           📧 SEND STATUS UPDATE EMAIL
+        ===================================================== */
+
+        try {
+
+            if (status === "Shipped" || status === "Delivered") {
+
+                await transporter.sendMail({
+                    from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                    to: updatedOrder.email,
+                    subject: `Your Order ${updatedOrder.orderId} is ${status} 🚚`,
+                    html: `
+                        <div style="font-family:Arial;padding:30px;">
+                            <h2>Order Update 📦</h2>
+                            <p>Hello ${updatedOrder.customerName},</p>
+                            <p>Your order <strong>${updatedOrder.orderId}</strong>
+                            is now <strong>${status}</strong>.</p>
+                            ${status === "Shipped" ? `
+                                <p><strong>Tracking ID:</strong> ${updatedOrder.trackingId}</p>
+                                <p><strong>Estimated Delivery:</strong> 
+                                    ${new Date(updatedOrder.estimatedDelivery).toDateString()}
+                                </p>
+                            ` : ""}
+                        </div>
+                    `
+                });
+
+                console.log("Status email sent");
+            }
+
+        } catch (emailError) {
+            console.log("Status Email Failed:", emailError.message);
+        }
+
+        /* =====================================================
+           🧾 SEND INVOICE WHEN DELIVERED
+        ===================================================== */
+
+        if (status === "Delivered") {
+
+            try {
+
+                const invoicePath = path.join(
+                    __dirname,
+                    `invoice-${updatedOrder.orderId}.pdf`
+                );
+
+                const doc = new PDFDocument({ size: "A4", margin: 40 });
+                const stream = fs.createWriteStream(invoicePath);
+
+                doc.pipe(stream);
+
+                /* ================= HEADER ================= */
+
+                doc.rect(0, 0, doc.page.width, 90).fill("#ffffff");
+
+                const logoPath = path.join(__dirname, "assets", "e-commm.png");
+                if (fs.existsSync(logoPath)) {
+                    doc.image(logoPath, 40, 25, { width: 120 });
+                }
+
+                doc.fillColor("#00000")
+                    .fontSize(26)
+                    .text("INVOICE", 0, 35, { align: "right" });
+
+                doc.fillColor("#000");
+                let y = 120;
+
+                /* ================= ORDER INFO ================= */
+
+                doc.fontSize(12);
+                doc.text(`Order ID: ${updatedOrder.orderId}`, 350, y);
+                doc.text(`Date: ${new Date(updatedOrder.createdAt).toDateString()}`, 350, y + 18);
+                doc.text(`Status: ${updatedOrder.status}`, 350, y + 36);
+
+                /* ================= CUSTOMER ================= */
+
+                doc.fontSize(16).text("Customer Details", 40, y);
+                doc.fontSize(12);
+
+                doc.text(`Name: ${updatedOrder.customerName}`, 40, y + 25);
+                doc.text(`Email: ${updatedOrder.email}`, 40, y + 42);
+                doc.text(`Mobile: ${updatedOrder.mobile}`, 40, y + 59);
+
+                /* ================= ADDRESS FUNCTION ================= */
+
+                const printAddress = (title, addr, x, yPos) => {
+                    doc.fontSize(14).text(title, x, yPos);
+                    doc.fontSize(12);
+
+                    if (!addr) {
+                        doc.text("N/A", x, yPos + 20);
+                        return;
+                    }
+
+                    let lineY = yPos + 20;
+
+                    if (addr.address) {
+                        doc.text(addr.address, x, lineY);
+                        lineY += 15;
+                    }
+
+                    doc.text(
+                        `${addr.city || ""}, ${addr.state || ""} - ${addr.pincode || ""}`,
+                        x,
+                        lineY
+                    );
+
+                    lineY += 15;
+
+                    if (addr.country) {
+                        doc.text(addr.country, x, lineY);
+                    }
+                };
+
+                y += 100;
+
+                printAddress("Billing Address", updatedOrder.billingAddress, 40, y);
+                printAddress("Shipping Address", updatedOrder.shippingAddress, 300, y);
+
+                /* ================= PRODUCTS TABLE ================= */
+
+                y += 120;
+
+                doc.fontSize(16).text("Products", 40, y);
+                y += 25;
+
+                doc.fontSize(12);
+
+                // Table Header
+                doc.rect(40, y, 500, 20).fill("#e5e7eb");
+                doc.fillColor("#000");
+                doc.text("Product", 50, y + 5);
+                doc.text("Qty", 320, y + 5);
+                doc.text("Price", 360, y + 5);
+                doc.text("Total", 430, y + 5);
+
+                y += 30;
+
+                let subtotal = 0;
+
+                updatedOrder.products.forEach(item => {
+
+                    const itemTotal = item.price * item.quantity;
+                    subtotal += itemTotal;
+
+                    const imgPath = item.images?.length > 0
+                        ? path.join(__dirname, "uploads", item.images[0])
+                        : null;
+
+                    if (imgPath && fs.existsSync(imgPath)) {
+                        try {
+                            doc.image(imgPath, 50, y, {
+                                width: 40,
+                                height: 40
+                            });
+                        } catch (err) {
+                            console.log("Image load error:", err.message);
+                        }
+                    }
+
+                    doc.text(item.name, 100, y + 10, { width: 200 });
+                    doc.text(item.quantity.toString(), 320, y + 10);
+                    doc.text(`₹ ${item.price}`, 360, y + 10);
+                    doc.text(`₹ ${itemTotal}`, 430, y + 10);
+
+                    y += 60;
+                });
+
+                /* ================= TOTAL ================= */
+
+                const gst = subtotal * 0.18;
+                const grandTotal = subtotal + gst;
+
+                y += 10;
+
+                doc.fontSize(12);
+                doc.text(`Subtotal: ₹ ${subtotal}`, 350, y);
+                y += 18;
+                doc.text(`GST (18%): ₹ ${gst.toFixed(2)}`, 350, y);
+                y += 18;
+
+                doc.fontSize(14)
+                    .fillColor("#111827")
+                    .text(`Grand Total: ₹ ${grandTotal.toFixed(2)}`, 350, y);
+
+                /* ================= FOOTER ================= */
+
+                doc.fontSize(10)
+                    .fillColor("#777")
+                    .text(
+                        "Thank you for shopping with Mukta Online Store! ❤️",
+                        0,
+                        770,
+                        { align: "center" }
+                    );
+
+                doc.end();
+
+                // 🔥 WAIT FOR PDF TO FINISH
+                await new Promise(resolve => stream.on("finish", resolve));
+
+                await transporter.sendMail({
+                    from: "Mukta Online Store <twaghmode@xtsworld.in>",
+                    to: updatedOrder.email,
+                    subject: `Invoice for Order ${updatedOrder.orderId}`,
+                    html: `
+                        <h2>Your Order Has Been Delivered 🎉</h2>
+                        <p>Please find attached invoice.</p>
+                    `,
+                    attachments: [
+                        {
+                            filename: `invoice-${updatedOrder.orderId}.pdf`,
+                            path: invoicePath
+                        }
+                    ]
+                });
+
+                console.log("Invoice email sent");
+
+                fs.unlinkSync(invoicePath);
+
+            } catch (err) {
+                console.log("Invoice Email Failed:", err.message);
+            }
         }
 
         res.json(updatedOrder);
@@ -609,7 +1140,7 @@ app.get("/invoice/:id", verifyToken, async (req, res) => {
         doc.fontSize(10)
             .fillColor("#777")
             .text(
-                "Thank you for shopping with MyStore!",
+                "Thank you for shopping with Mukta Online Store!",
                 0,
                 770,
                 { align: "center" }

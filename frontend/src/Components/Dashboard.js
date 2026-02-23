@@ -10,6 +10,7 @@ import {
     Tooltip,
     ResponsiveContainer,
     PieChart,
+    Legend,
     Pie,
     Cell
 } from "recharts";
@@ -17,8 +18,6 @@ import {
 const Dashboard = () => {
 
     const [orders, setOrders] = useState([]);
-
-    /* ================= FETCH REAL ORDERS ================= */
 
     useEffect(() => {
         fetchOrders();
@@ -45,31 +44,67 @@ const Dashboard = () => {
         }
     };
 
-    /* ================= DYNAMIC SUMMARY ================= */
+    /* ================= SUMMARY FIX ================= */
 
+    // Income → All successful orders (money received)
+    const totalIncome = orders
+        .filter(o =>
+            o.status === "Confirmed" ||
+            o.status === "Shipped" ||
+            o.status === "Delivered"
+        )
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+    // Revenue → Only delivered orders (final revenue)
     const totalRevenue = orders
-        .filter(o => o.status === "Completed")
+        .filter(o => o.status === "Delivered")
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+    // This Month Revenue
+    const currentMonth = new Date().getMonth();
+
+    const monthlyRevenue = orders
+        .filter(o =>
+            new Date(o.createdAt).getMonth() === currentMonth &&
+            o.status === "Delivered"
+        )
         .reduce((acc, curr) => acc + curr.totalAmount, 0);
 
     const totalOrders = orders.length;
 
     const summary = {
-        income: totalRevenue,
+        income: totalIncome,
         orders: totalOrders,
-        activity: totalOrders * 6, // simple activity logic
-        revenue: totalRevenue
+        activity: totalOrders * 6,
+        revenue: monthlyRevenue
     };
 
-    /* ================= ORDER STATUS PIE DATA ================= */
+    /* ================= PIE DATA ================= */
+
+    const countPending = orders.filter(o => o.status === "Pending").length;
+    const countConfirmed = orders.filter(o => o.status === "Confirmed").length;
+    const countShipped = orders.filter(o => o.status === "Shipped").length;
+    const countDelivered = orders.filter(o => o.status === "Delivered").length;
+    const countCancelled = orders.filter(o => o.status === "Cancelled").length;
+    const countRefunded = orders.filter(o => o.status === "Refunded").length;
 
     const orderStatusData = [
-        { name: "Completed", value: orders.filter(o => o.status === "Completed").length },
-        { name: "Pending", value: orders.filter(o => o.status === "Pending").length },
-        { name: "Cancelled", value: orders.filter(o => o.status === "Cancelled").length },
-        { name: "Refunded", value: orders.filter(o => o.status === "Refunded").length }
+        { name: "Pending", value: countPending },
+        { name: "Confirmed", value: countConfirmed },
+        { name: "Shipped", value: countShipped },
+        { name: "Delivered", value: countDelivered },
+        { name: "Cancelled", value: countCancelled },
+        { name: "Refunded", value: countRefunded }
     ];
 
-    const COLORS = ["#28a745", "#ffc107", "#dc3545", "#6c757d"];
+    const COLORS = [
+        "#ffc107",
+        "#17a2b8",
+        "#007bff",
+        "#28a745",
+        "#dc3545",
+        "#6c757d"
+    ];
 
     /* ================= MONTHLY REVENUE ================= */
 
@@ -84,8 +119,6 @@ const Dashboard = () => {
         return { month, revenue: monthRevenue };
     });
 
-    /* ================= SALES COUNT ================= */
-
     const salesData = revenueData.map(item => ({
         month: item.month,
         sales: orders.filter(o =>
@@ -93,164 +126,178 @@ const Dashboard = () => {
         ).length
     }));
 
-    /* ================= LATEST ORDERS ================= */
-
-    const latestOrders = orders
-        .slice(0, 5)
-        .map(o => ({
-            id: o.orderId,
-            customer: o.customerName,
-            total: o.totalAmount,
-            status: o.status
-        }));
+    const latestOrders = orders.slice(0, 5);
 
     const getBadge = (status) => {
         const map = {
             Pending: "warning",
             Completed: "success",
             Cancelled: "danger",
-            Refunded: "secondary"
+            Refunded: "secondary",
+            Confirmed: "info",
+            Shipped: "primary",
+            Delivered: "success"
         };
-        return `badge bg-${map[status]} rounded-pill px-3 py-2`;
+        return `badge bg-${map[status] || "secondary"} rounded-pill px-3 py-2`;
     };
 
     return (
-        <div className="container py-5">
+        <div className="dashboard-wrapper py-5">
+            <div className="container">
 
-            <h3 className="fw-bold mb-4">E-Commerce Dashboard</h3>
+                <h3 className="dashboard-title">E-Commerce Dashboard</h3>
 
-            {/* ================= SUMMARY CARDS ================= */}
-            <div className="row g-4 mb-4">
-
-                <div className="col-md-3">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="text-muted">Income</h6>
-                        <h3 className="fw-bold">₹{summary.income}</h3>
-                        <small className="text-success">Live Data</small>
-                    </div>
-                </div>
-
-                <div className="col-md-3">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="text-muted">Orders</h6>
-                        <h3 className="fw-bold">{summary.orders}</h3>
-                        <small className="text-muted">Total Orders</small>
-                    </div>
-                </div>
-
-                <div className="col-md-3">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="text-muted">Activity</h6>
-                        <h3 className="fw-bold">{summary.activity}</h3>
-                        <small className="text-muted">User Activity</small>
-                    </div>
-                </div>
-
-                <div className="col-md-3">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="text-muted">Revenue</h6>
-                        <h3 className="fw-bold">₹{summary.revenue}</h3>
-                        <small className="text-muted">Completed Orders</small>
-                    </div>
-                </div>
-
-            </div>
-
-            {/* ================= MAIN CHART ROW ================= */}
-            <div className="row g-4 mb-4">
-
-                <div className="col-lg-8">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="fw-bold mb-3">Total Revenue</h6>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <LineChart data={revenueData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="month" />
-                                <YAxis />
-                                <Tooltip />
-                                <Line
-                                    type="monotone"
-                                    dataKey="revenue"
-                                    stroke="#4e73df"
-                                    strokeWidth={3}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="col-lg-4">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="fw-bold mb-3">Order Status</h6>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                                <Pie data={orderStatusData} dataKey="value" outerRadius={100}>
-                                    {orderStatusData.map((entry, index) => (
-                                        <Cell key={index} fill={COLORS[index]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-            </div>
-
-            {/* ================= SALES + LATEST ORDERS ================= */}
-            <div className="row g-4">
-
-                <div className="col-lg-4">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="fw-bold mb-3">Sales / Revenue</h6>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={salesData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="month" />
-                                <YAxis />
-                                <Tooltip />
-                                <Bar dataKey="sales" fill="#4e73df" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="col-lg-8">
-                    <div className="card shadow-sm border-0 rounded-4 p-4">
-                        <h6 className="fw-bold mb-3">Latest Orders</h6>
-
-                        <div className="table-responsive">
-                            <table className="table align-middle">
-                                <thead className="table-light">
-                                    <tr>
-                                        <th>Order ID</th>
-                                        <th>Customer</th>
-                                        <th>Total</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {latestOrders.map(order => (
-                                        <tr key={order.id}>
-                                            <td className="fw-semibold">#{order.id}</td>
-                                            <td>{order.customer}</td>
-                                            <td className="fw-bold">₹{order.total}</td>
-                                            <td>
-                                                <span className={getBadge(order.status)}>
-                                                    {order.status}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                {/* SUMMARY */}
+                <div className="row g-4 mb-4">
+                    <div className="col-md-6 col-lg-3">
+                        <div className="card dashboard-card p-4">
+                            <div className="card-title">Income</div>
+                            <div className="card-value">₹{summary.income}</div>
+                            <small className="text-success fw-semibold">Live Data</small>
                         </div>
+                    </div>
 
+                    <div className="col-md-6 col-lg-3">
+                        <div className="card dashboard-card p-4">
+                            <div className="card-title">Orders</div>
+                            <div className="card-value">{summary.orders}</div>
+                            <small className="text-muted">Total Orders</small>
+                        </div>
+                    </div>
+
+                    <div className="col-md-6 col-lg-3">
+                        <div className="card dashboard-card p-4">
+                            <div className="card-title">Activity</div>
+                            <div className="card-value">{summary.activity}</div>
+                            <small className="text-muted">User Activity</small>
+                        </div>
+                    </div>
+
+                    <div className="col-md-6 col-lg-3">
+                        <div className="card dashboard-card p-4">
+                            <div className="card-title">Revenue</div>
+                            <div className="card-value">₹{summary.revenue}</div>
+                            <small className="text-muted">Completed Orders</small>
+                        </div>
                     </div>
                 </div>
 
-            </div>
+                {/* MAIN CHARTS */}
+                <div className="row g-4 mb-4">
 
+                    <div className="col-lg-8">
+                        <div className="card dashboard-card chart-card">
+                            <div className="chart-title">Total Revenue</div>
+                            <ResponsiveContainer width="100%" height={320}>
+                                <LineChart data={revenueData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="month" interval={0} />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="revenue"
+                                        stroke="#4e73df"
+                                        strokeWidth={3}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="col-lg-4">
+                        <div className="card dashboard-card chart-card">
+                            <div className="chart-title">Order Status</div>
+                            <ResponsiveContainer width="100%" height={320}>
+                                <PieChart>
+                                    <Pie
+                                        data={orderStatusData}
+                                        dataKey="value"
+                                        nameKey="name"
+                                        outerRadius={95}
+                                        innerRadius={50}
+                                        paddingAngle={3}
+                                    >
+                                        {orderStatusData.map((entry, index) => (
+                                            <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend verticalAlign="bottom" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                </div>
+
+                {/* SALES + TABLE */}
+                <div className="row g-4">
+
+                    <div className="col-lg-4">
+                        <div className="card shadow-sm border-0 rounded-4 p-4 h-100">
+                            <h6 className="fw-bold mb-4">Sales / Revenue</h6>
+
+                            <ResponsiveContainer width="100%" height={340}>
+                                <BarChart
+                                    data={salesData}
+                                    margin={{ top: 10, right: 20, left: 0, bottom: 20 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" />
+
+                                    <XAxis
+                                        dataKey="month"
+                                        interval={0}
+                                        angle={-35}
+                                        textAnchor="end"
+                                        height={60}
+                                    />
+
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Bar dataKey="sales" fill="#4e73df" radius={[6, 6, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="col-lg-8">
+                        <div className="card dashboard-card p-4 h-100">
+                            <div className="chart-title">Latest Orders</div>
+
+                            <div className="table-responsive">
+                                <table className="table table-hover align-middle">
+                                    <thead className="table-light">
+                                        <tr>
+                                            <th>Order ID</th>
+                                            <th>Customer</th>
+                                            <th>Total</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {latestOrders.slice(0, 10).map(order => (
+                                            <tr key={order._id}>
+                                                <td className="fw-semibold">#{order.orderId}</td>
+                                                <td>{order.customerName}</td>
+                                                <td className="fw-bold">₹{order.totalAmount}</td>
+                                                <td>
+                                                    <span className={getBadge(order.status)}>
+                                                        {order.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
         </div>
     );
 };

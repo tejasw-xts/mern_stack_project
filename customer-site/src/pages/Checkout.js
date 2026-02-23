@@ -10,6 +10,11 @@ const Checkout = () => {
 
     const [sameAsBilling, setSameAsBilling] = useState(true);
     const [errors, setErrors] = useState({});
+    const [cardType, setCardType] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const isFormValid = () => {
+        return Object.keys(errors).length === 0 && cart.length > 0;
+    };
 
     const [form, setForm] = useState({
         name: "",
@@ -127,18 +132,40 @@ const Checkout = () => {
 
             const cardRegex = /^[0-9]{16}$/;
             const cvvRegex = /^[0-9]{3}$/;
+            const rawCardNumber = form.cardNumber.replace(/\s/g, "");
 
-            if (!cardRegex.test(form.cardNumber))
-                newErrors.cardNumber = "Card must be 16 digits";
+            if (!rawCardNumber) {
+                newErrors.cardNumber = "Card number is required";
+            } else if (rawCardNumber.length !== 16) {
+                newErrors.cardNumber = "Card number must be exactly 16 digits";
+            }
 
             if (!form.cardName.trim())
                 newErrors.cardName = "Name on card required";
 
-            if (!form.expiry.trim())
-                newErrors.expiry = "Expiry required";
+            if (!form.expiry) {
+                newErrors.expiry = "Expiry date is required";
+            } else if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(form.expiry)) {
+                newErrors.expiry = "Expiry must be in MM/YY format";
+            } else {
+                const [month, year] = form.expiry.split("/");
+                const currentDate = new Date();
+                const currentYear = currentDate.getFullYear() % 100; // last 2 digits
+                const currentMonth = currentDate.getMonth() + 1;
 
-            if (!cvvRegex.test(form.cvv))
-                newErrors.cvv = "CVV must be 3 digits";
+                if (
+                    parseInt(year) < currentYear ||
+                    (parseInt(year) === currentYear && parseInt(month) < currentMonth)
+                ) {
+                    newErrors.expiry = "Card has expired";
+                }
+            }
+
+            if (!form.cvv) {
+                newErrors.cvv = "CVV is required";
+            } else if (form.cvv.length !== 3) {
+                newErrors.cvv = "CVV must be exactly 3 digits";
+            }
         }
 
         setErrors(newErrors);
@@ -148,50 +175,54 @@ const Checkout = () => {
     const placeOrder = async () => {
         if (!validate()) return;
 
-        const shippingData = sameAsBilling
-            ? {
-                address: form.billingAddress,
-                city: form.billingCity,
-                state: form.billingState,
-                pincode: form.billingPincode,
-                country: form.billingCountry
-            }
-            : {
-                address: form.shippingAddress,
-                city: form.shippingCity,
-                state: form.shippingState,
-                pincode: form.shippingPincode,
-                country: form.shippingCountry
-            };
+        setIsSubmitting(true);
 
-        const res = await fetch("http://172.16.60.17:5000/place-order", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                userId: user._id,
-                customerName: form.name,
-                email: form.email,
-                mobile: form.mobile,
+        try {
+            const res = await fetch("http://172.16.60.17:5000/place-order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId: user._id,
+                    customerName: form.name,
+                    email: form.email,
+                    mobile: form.mobile,
+                    billingAddress: {
+                        address: form.billingAddress,
+                        city: form.billingCity,
+                        state: form.billingState,
+                        pincode: form.billingPincode,
+                        country: form.billingCountry
+                    },
+                    shippingAddress: sameAsBilling
+                        ? {
+                            address: form.billingAddress,
+                            city: form.billingCity,
+                            state: form.billingState,
+                            pincode: form.billingPincode,
+                            country: form.billingCountry
+                        }
+                        : {
+                            address: form.shippingAddress,
+                            city: form.shippingCity,
+                            state: form.shippingState,
+                            pincode: form.shippingPincode,
+                            country: form.shippingCountry
+                        },
+                    paymentMethod: form.paymentMethod,
+                    products: cart,
+                    totalAmount: total
+                })
+            });
 
-                billingAddress: {
-                    address: form.billingAddress,
-                    city: form.billingCity,
-                    state: form.billingState,
-                    pincode: form.billingPincode,
-                    country: form.billingCountry
-                },
+            const data = await res.json();
+            clearCart();
+            navigate("/thank-you", { state: data });
 
-                shippingAddress: shippingData,  // 🔥 THIS IS CORRECT FOR YOUR CODE
-
-                paymentMethod: form.paymentMethod,
-                products: cart,
-                totalAmount: total
-            })
-        });
-
-        const data = await res.json();
-        clearCart();
-        navigate("/thank-you", { state: data });
+        } catch (error) {
+            console.error("Order failed:", error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -354,11 +385,38 @@ const Checkout = () => {
                                     <input
                                         className="form-control mb-3"
                                         name="cardNumber"
-                                        placeholder="Card Number"
-                                        maxLength="16"
+                                        placeholder="1234 5678 9012 3456"
+                                        maxLength="19"
                                         value={form.cardNumber}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            let value = e.target.value.replace(/\D/g, "").slice(0, 16);
+
+                                            // Detect Card Type
+                                            if (/^4/.test(value)) {
+                                                setCardType("Visa");
+                                            } else if (/^5[1-5]/.test(value)) {
+                                                setCardType("MasterCard");
+                                            } else {
+                                                setCardType("");
+                                            }
+
+                                            // Add space every 4 digits
+                                            const formatted = value.replace(/(.{4})/g, "$1 ").trim();
+
+                                            setForm({ ...form, cardNumber: formatted });
+                                            setErrors({ ...errors, cardNumber: "" });
+                                        }}
                                     />
+
+                                    {cardType && (
+                                        <div className="mb-2">
+                                            <small className="fw-bold text-primary">
+                                                {cardType} Card Detected
+                                            </small>
+                                        </div>
+                                    )}
+
+                                    <small className="text-danger">{errors.cardNumber}</small>
                                     <small className="text-danger">{errors.cardNumber}</small>
 
                                     <input
@@ -376,8 +434,29 @@ const Checkout = () => {
                                                 className="form-control"
                                                 name="expiry"
                                                 placeholder="MM/YY"
+                                                maxLength="5"
                                                 value={form.expiry}
-                                                onChange={handleChange}
+                                                onChange={(e) => {
+                                                    let value = e.target.value.replace(/\D/g, ""); // remove non-digits
+
+                                                    // Add slash automatically after 2 digits
+                                                    if (value.length >= 3) {
+                                                        value = value.slice(0, 2) + "/" + value.slice(2, 4);
+                                                    }
+
+                                                    // Restrict month between 01-12
+                                                    if (value.length >= 2) {
+                                                        const month = parseInt(value.slice(0, 2));
+                                                        if (month > 12) {
+                                                            value = "12";
+                                                        } else if (month === 0) {
+                                                            value = "01";
+                                                        }
+                                                    }
+
+                                                    setForm({ ...form, expiry: value });
+                                                    setErrors({ ...errors, expiry: "" });
+                                                }}
                                             />
                                             <small className="text-danger">{errors.expiry}</small>
                                         </div>
@@ -389,7 +468,11 @@ const Checkout = () => {
                                                 placeholder="CVV"
                                                 maxLength="3"
                                                 value={form.cvv}
-                                                onChange={handleChange}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.replace(/\D/g, "");
+                                                    setForm({ ...form, cvv: value });
+                                                    setErrors({ ...errors, cvv: "" });
+                                                }}
                                             />
                                             <small className="text-danger">{errors.cvv}</small>
                                         </div>
@@ -424,14 +507,28 @@ const Checkout = () => {
 
                             <button
                                 className="btn w-100 mt-3 text-white"
+                                disabled={isSubmitting}
                                 style={{
-                                    background: "linear-gradient(135deg,#000,#434343)",
+                                    background: isSubmitting
+                                        ? "#999"
+                                        : "linear-gradient(135deg,#000,#434343)",
                                     borderRadius: "30px",
-                                    padding: "12px"
+                                    padding: "12px",
+                                    opacity: isSubmitting ? 0.7 : 1
                                 }}
                                 onClick={placeOrder}
                             >
-                                🔒 Confirm Order
+                                {isSubmitting ? (
+                                    <>
+                                        <span
+                                            className="spinner-border spinner-border-sm me-2"
+                                            role="status"
+                                        ></span>
+                                        Processing...
+                                    </>
+                                ) : (
+                                    "🔒 Confirm Order"
+                                )}
                             </button>
 
                         </div>
